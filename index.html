@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>広告の承認</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 520px; margin: 24px auto; padding: 0 16px; color: #222; line-height: 1.7; }
+  .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin: 16px 0; }
+  .row { margin: 4px 0; } .label { color: #666; font-size: 14px; }
+  input { font-size: 20px; padding: 8px; width: 140px; letter-spacing: 4px; }
+  button { font-size: 18px; padding: 12px 20px; border-radius: 8px; border: 0; margin: 8px 8px 0 0; cursor: pointer; }
+  .ok { background: #1d9e75; color: #fff; } .ng { background: #eee; color: #222; }
+  .msg { font-weight: 600; margin-top: 12px; } .err { color: #a32d2d; }
+</style>
+</head>
+<body>
+<h1 style="font-size:22px">広告の承認</h1>
+<div id="box" class="card">読み込み中…</div>
+<script>
+const FUNC = "https://xalyazxlwseojzjihrbx.supabase.co/functions/v1/approve";
+const t = new URLSearchParams(location.search).get("t") || "";
+const box = document.getElementById("box");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = d => d ? new Date(d).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }) : "未定";
+async function load() {
+  try {
+    const r = await fetch(FUNC + "?t=" + encodeURIComponent(t));
+    const a = await r.json();
+    if (!r.ok) { box.innerHTML = '<p class="err">' + esc(a.error) + '</p>'; return; }
+    const head = '<div class="row"><span class="label">内容</span><br>' + esc(a.what).replace(/\n/g, "<br>") + '</div>' +
+      '<div class="row"><span class="label">金額（総額）</span><br>' + (a.amount != null ? Number(a.amount).toLocaleString() + " 円" : "未定") + '</div>' +
+      '<div class="row"><span class="label">配信開始</span><br>' + fmt(a.start_at) + '</div>' +
+      '<div class="row"><span class="label">リンクの期限</span><br>' + fmt(a.expires_at) + '</div>';
+    if (a.status !== "pending") { box.innerHTML = head + '<p class="msg">この件は、すでに「' + (a.status === "approved" ? "承認" : a.status === "rejected" ? "差し戻し" : esc(a.status)) + '」済みです。</p>'; return; }
+    if (a.expired) { box.innerHTML = head + '<p class="msg err">リンクの期限が切れています。</p>'; return; }
+    box.innerHTML = head + '<p style="margin-top:16px">確認番号</p><input id="pin" type="password" inputmode="numeric" autocomplete="off">' +
+      '<div><button class="ok" onclick="decide(\'approve\')">承認する</button><button class="ng" onclick="decide(\'reject\')">差し戻す</button></div><p id="msg" class="msg"></p>';
+  } catch (e) { box.innerHTML = '<p class="err">読み込みに失敗しました。通信状態を確認して、開き直してください。</p>'; }
+}
+async function decide(action) {
+  const pin = document.getElementById("pin").value.trim();
+  const msg = document.getElementById("msg");
+  if (!pin) { msg.className = "msg err"; msg.textContent = "確認番号を入れてください"; return; }
+  if (action === "approve" && !confirm("承認すると、広告の作成と配信開始まで自動で進みます。承認しますか？")) return;
+  msg.className = "msg"; msg.textContent = "送信中…";
+  try {
+    const r = await fetch(FUNC, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t, action, pin }) });
+    const a = await r.json();
+    if (!r.ok) { msg.className = "msg err"; msg.textContent = a.error; return; }
+    box.innerHTML = '<p class="msg">' + (a.result === "approved" ? "承認しました。広告の作成と配信開始に進みます。" : "差し戻しました。") + '</p>';
+  } catch (e) { msg.className = "msg err"; msg.textContent = "送信に失敗しました。もう一度押してください。"; }
+}
+load();
+</script>
+</body>
+</html>
